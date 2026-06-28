@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ハッセ図ビューア（閲覧専用）</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            height: 100dvh;
+            background-color: #f4f7f6;
+            overflow: hidden;
+        }
+
+        #toolbar {
+            background-color: #2c3e50;
+            padding: 10px;
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            white-space: nowrap;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            z-index: 10;
+            flex-shrink: 0;
+            min-height: 40px;
+            align-items: center;
+        }
+
+        #toolbar::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        #toolbar::-webkit-scrollbar-thumb {
+            background: #7f8c8d;
+            border-radius: 4px;
+        }
+
+        button {
+            flex-shrink: 0;
+            padding: 10px 14px;
+            background-color: #34495e;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+            touch-action: manipulation;
+        }
+
+        button.active {
+            background-color: #3498db;
+            box-shadow: 0 0 8px #3498db;
+        }
+
+        button.active-delete {
+            background-color: #e74c3c;
+            box-shadow: 0 0 8px #e74c3c;
+        }
+
+        button.active-prereq {
+            background-color: #e67e22;
+            box-shadow: 0 0 8px #e67e22;
+        }
+
+        button.active-trans {
+            background-color: #2ecc71;
+            box-shadow: 0 0 8px #2ecc71;
+        }
+
+        .btn-io {
+            background-color: #8e44ad;
+        }
+
+        .add-group {
+            display: inline-flex;
+            align-items: center;
+            background-color: #34495e;
+            border-radius: 8px;
+            padding: 6px 8px;
+            flex-shrink: 0;
+            gap: 12px;
+        }
+
+        .add-group button {
+            background-color: transparent;
+            padding: 8px 4px;
+        }
+
+        .color-palette-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.15);
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+
+        .color-palette {
+            display: grid;
+            grid-template-columns: repeat(10, 22px);
+            gap: 4px;
+        }
+
+        .color-swatch {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-sizing: border-box;
+            transition: transform 0.1s;
+        }
+
+        .color-swatch:active {
+            transform: scale(0.85);
+        }
+
+        .color-swatch.selected {
+            border: 2px solid #fff;
+            box-shadow: 0 0 0 2px #3498db;
+        }
+
+        input[type="color"] {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: transparent;
+            flex-shrink: 0;
+        }
+
+        input[type="text"],
+        input[type="url"],
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #cfd8dc;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 14px;
+        }
+
+        textarea {
+            min-height: 90px;
+            resize: vertical;
+        }
+
+        #group-name-input {
+            width: 120px;
+            min-width: 120px;
+            background: #ffffff;
+            color: #2c3e50;
+        }
+
+        #cy-wrap {
+            position: relative;
+            flex: 1;
+            min-height: 0;
+        }
+
+        #cy {
+            width: 100%;
+            height: 100%;
+        }
+
+        #group-legend {
+            position: absolute;
+            right: 12px;
+            bottom: 12px;
+            z-index: 20;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 10px 12px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+            min-width: 170px;
+            max-width: min(70vw, 260px);
+            font-size: 13px;
+            color: #2c3e50;
+        }
+
+        #group-legend h4 {
+            margin: 0 0 8px 0;
+            font-size: 13px;
+        }
+
+        #group-legend-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            line-height: 1.3;
+        }
+
+        .legend-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            flex-shrink: 0;
+        }
+
+        .legend-empty {
+            color: #7f8c8d;
+        }
+
+        #modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 999;
+        }
+
+        .floating-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 14px;
+            width: 88%;
+            max-width: 360px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+        }
+
+        .floating-modal h3 {
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            color: #333;
+            text-align: center;
+        }
+
+        .modal-field {
+            margin-bottom: 12px;
+        }
+
+        .modal-field label {
+            display: block;
+            font-size: 12px;
+            color: #555;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        .modal-btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            text-decoration: none;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        .modal-btn.disabled {
+            background-color: #bdc3c7;
+            pointer-events: none;
+        }
+
+        .modal-btn.secondary {
+            background-color: #16a085;
+        }
+
+        .close-btn {
+            background-color: #e74c3c;
+            margin-top: 15px;
+            margin-bottom: 0;
+        }
+
+        .hint-text {
+            margin: 6px 0 0 0;
+            font-size: 12px;
+            color: #607d8b;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="toolbar">
+        <span style="color:#fff; font-size:14px; font-weight:bold; padding: 0 6px;">👁 閲覧モード</span>
+        <button id="arrange-btn">✨ 整列</button>
+        <button id="load-btn" class="btn-io" onclick="document.getElementById('file-input').click()">📂 読込</button>
+        <input type="file" id="file-input" style="display: none;" accept=".json">
+    </div>
+
+    <div id="cy-wrap">
+        <div id="cy"></div>
+        <div id="group-legend">
+            <h4>グループ表示（色で分類）</h4>
+            <div id="group-legend-list"></div>
+        </div>
+    </div>
+
+    <div id="modal-overlay"></div>
+
+    <div id="link-modal" class="floating-modal">
+        <h3>トランジション一覧</h3>
+        <div id="modal-content"></div>
+        <button class="modal-btn close-btn" onclick="closeModal()">閉じる</button>
+    </div>
+
+    <div id="node-editor" class="floating-modal">
+        <h3>技を編集</h3>
+        <div class="modal-field">
+            <label for="node-name-input">技名</label>
+            <textarea id="node-name-input" placeholder="技名を入力"></textarea>
+            <p class="hint-text">改行もそのまま使えます。</p>
+        </div>
+        <div class="modal-field">
+            <label for="node-url-input">動画URL</label>
+            <input type="url" id="node-url-input" placeholder="https://...">
+        </div>
+        <div class="modal-field">
+            <label>色</label>
+            <div class="color-palette-container" style="background: transparent; padding: 0; justify-content: center; margin-bottom: 8px;">
+                <div id="modal-color-palette" class="color-palette" style="grid-template-columns: repeat(5, 28px); gap: 10px;"></div>
+            </div>
+            <div style="text-align: center;">
+                <input type="color" id="node-color-input" value="#3498db" title="その他の色を選択">
+            </div>
+        </div>
+        <div class="modal-field">
+            <label for="node-group-input">グループ名</label>
+            <input type="text" id="node-group-input" placeholder="例: 返し技 / 左系 / 基本形">
+        </div>
+        <button id="node-save-btn" class="modal-btn">保存</button>
+        <button class="modal-btn close-btn" onclick="closeNodeEditor()">閉じる</button>
+    </div>
+
+    <div id="trans-editor" class="floating-modal">
+        <h3>遷移線を編集</h3>
+        <div class="modal-field">
+            <label for="trans-name-input">遷移名（先頭の1件）</label>
+            <input type="text" id="trans-name-input" placeholder="遷移名">
+        </div>
+        <div class="modal-field">
+            <label for="trans-url-input">動画URL</label>
+            <input type="url" id="trans-url-input" placeholder="https://...">
+        </div>
+        <p class="hint-text">この画面では先頭の遷移名を編集できます。</p>
+        <button id="trans-save-btn" class="modal-btn">保存</button>
+        <button class="modal-btn close-btn" onclick="closeTransEditor()">閉じる</button>
+    </div>
+
+    <script>
+        const PRESET_COLORS = [
+            '#e74c3c', '#e91e63', '#9b59b6', '#673ab7', '#3f51b5',
+            '#2196f3', '#03a9f4', '#00bcd4', '#1abc9c', '#2ecc71',
+            '#8bc34a', '#cddc39', '#f1c40f', '#ffc107', '#f39c12',
+            '#e67e22', '#795548', '#95a5a6', '#34495e', '#000000'
+        ];
+
+        // 色を正規化（小文字化、3桁HEX→6桁HEXに変換）
+        function normalizeColor(color) {
+            if (!color) return '#3498db';
+            let c = String(color).trim().toLowerCase();
+            // #rgb → #rrggbb
+            if (/^#[0-9a-f]{3}$/.test(c)) {
+                c = '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3];
+            }
+            return c;
+        }
+
+        function setupColorPalette(containerId, inputId) {
+            const container = document.getElementById(containerId);
+            const input = document.getElementById(inputId);
+            
+            PRESET_COLORS.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.className = 'color-swatch';
+                swatch.style.backgroundColor = color;
+                swatch.dataset.color = color.toLowerCase();
+                
+                swatch.addEventListener('click', () => {
+                    input.value = color;
+                    updatePaletteSelection(container, color);
+                });
+                
+                container.appendChild(swatch);
+            });
+
+            input.addEventListener('input', (e) => {
+                updatePaletteSelection(container, e.target.value);
+            });
+
+            updatePaletteSelection(container, input.value);
+        }
+
+        function updatePaletteSelection(container, hexColor) {
+            const lowerColor = normalizeColor(hexColor);
+            container.querySelectorAll('.color-swatch').forEach(el => {
+                if (el.dataset.color === lowerColor) {
+                    el.classList.add('selected');
+                } else {
+                    el.classList.remove('selected');
+                }
+            });
+        }
+
+        setupColorPalette('modal-color-palette', 'node-color-input');
+
+        let currentMode = 'view';
+        let editingNode = null;
+        let editingEdge = null;
+
+        function pushUndo(action, data) { /* 閲覧専用のため無効 */ }
+
+        const cy = cytoscape({
+            container: document.getElementById('cy'),
+            style: [
+                {
+                    selector: 'node',
+                    style: {
+                        'label': 'data(label)',
+                        'background-color': '#95a5a6',
+                        'color': '#333',
+                        'text-valign': 'bottom',
+                        'text-margin-y': 5,
+                        'font-size': '14px',
+                        'width': 40,
+                        'height': 40,
+                        'text-wrap': 'wrap',
+                        // 【修正】ノードと文字を最前面に
+                        'z-index': 30,
+                        'z-index-compare': 'manual'
+                    }
+                },
+                {
+                    selector: 'edge[edgeType="prereq"]',
+                    style: {
+                        'width': 3,
+                        'line-color': '#95a5a6',
+                        'target-arrow-color': '#95a5a6',
+                        'target-arrow-shape': 'triangle',
+                        'curve-style': 'straight',
+                        // 【修正】前提線は最背面
+                        'z-index': 1,
+                        'z-index-compare': 'manual'
+                    }
+                },
+                {
+                    selector: 'edge[edgeType="trans"]',
+                    style: {
+                        'width': 4,
+                        'line-color': '#2ecc71',
+                        'target-arrow-color': '#2ecc71',
+                        'target-arrow-shape': 'vee',
+                        'line-style': 'dashed',
+                        'curve-style': 'unbundled-bezier',
+                        'control-point-distances': [60],
+                        'control-point-weights': [0.5],
+                        'label': 'data(label)',
+                        'text-wrap': 'wrap',
+                        'font-size': '12px',
+                        'color': '#27ae60',
+                        // 【修正】文字を白背景でしっかり囲い、線とぶつかっても読めるように
+                        'text-background-opacity': 1,
+                        'text-background-color': '#ffffff',
+                        'text-background-padding': '4px',
+                        'text-background-shape': 'roundrectangle',
+                        'text-border-opacity': 1,
+                        'text-border-color': '#2ecc71',
+                        'text-border-width': 1,
+                        'text-events': 'yes',
+                        // 【修正】遷移線は前提線より前面（線同士の交差時にこちらが上に）
+                        'z-index': 10,
+                        'z-index-compare': 'manual'
+                    }
+                },
+                {
+                    selector: '.selected-source',
+                    style: { 'border-width': 5, 'border-color': '#e74c3c' }
+                },
+                {
+                    selector: 'node[url]',
+                    style: { 'text-border-color': '#e74c3c', 'text-border-width': 2 }
+                },
+                {
+                    selector: 'edge[hasTransUrl]',
+                    style: { 'text-border-color': '#e74c3c', 'text-border-width': 2 }
+                }
+            ]
+        });
+
+        const btns = {};  // 閲覧専用：編集ボタンなし
+
+        const modalOverlay = document.getElementById('modal-overlay');
+        const linkModal = document.getElementById('link-modal');
+        const modalContent = document.getElementById('modal-content');
+        const nodeEditor = document.getElementById('node-editor');
+        const transEditor = document.getElementById('trans-editor');
+
+        function setMode(mode) {
+            currentMode = 'view';  // 常にviewモード固定
+        }
+
+        function openOverlay() {
+            modalOverlay.style.display = 'block';
+        }
+
+        function closeOverlayIfUnused() {
+            const anyOpen = [linkModal, nodeEditor, transEditor].some(el => el.style.display === 'block');
+            if (!anyOpen) {
+                modalOverlay.style.display = 'none';
+            }
+        }
+
+        function updateNodeDisplay(node) {
+            const rawName = node.data('rawName') || '無名';
+            const url = (node.data('url') || '').trim();
+            node.data('label', rawName + (url ? '\n🔗' : ''));
+        }
+
+        function buildTransitionLabel(transitions) {
+            if (!transitions || transitions.length === 0) return '';
+            if (transitions.length === 1) return transitions[0].name || '';
+            return transitions.map((t, i) => `${i + 1}. ${t.name || ''}`).join('\n');
+        }
+
+        function normalizeGraphData() {
+            cy.nodes().forEach(node => {
+                const color = normalizeColor(node.data('color') || '#3498db');
+                node.data('color', color);
+                node.style('background-color', color);
+                
+                if (node.data('groupName') == null) node.data('groupName', '');
+                if (!node.data('rawName')) {
+                    const oldLabel = node.data('label') || '';
+                    node.data('rawName', oldLabel.replace(/\n?🔗/g, ''));
+                }
+                updateNodeDisplay(node);
+            });
+
+            cy.edges('[edgeType="trans"]').forEach(edge => {
+                const transitions = edge.data('transitions') || (edge.data('label') ? [{ name: edge.data('label'), url: '' }] : []);
+                edge.data({
+                    transitions: transitions,
+                    label: buildTransitionLabel(transitions),
+                    hasTransUrl: transitions.some(t => t.url)
+                });
+            });
+        }
+
+        function updateGroupLegend() {
+            const list = document.getElementById('group-legend-list');
+            // 【修正】同じ色なら同じグループとして扱う。キーは色のみ。
+            const groups = new Map();
+
+            cy.nodes().forEach(node => {
+                const color = normalizeColor(node.data('color') || '#3498db');
+                const groupName = (node.data('groupName') || '').trim();
+                if (!groups.has(color)) {
+                    groups.set(color, { color: color, names: new Set(), count: 0 });
+                }
+                const entry = groups.get(color);
+                entry.count += 1;
+                if (groupName) entry.names.add(groupName);
+            });
+
+            if (groups.size === 0) {
+                list.innerHTML = '<div class="legend-empty">技を追加するとここに色ごとのグループが表示されます。</div>';
+                return;
+            }
+
+            list.innerHTML = '';
+            Array.from(groups.values())
+                .sort((a, b) => b.count - a.count)
+                .forEach(group => {
+                    const item = document.createElement('div');
+                    item.className = 'legend-item';
+                    const displayName = group.names.size > 0
+                        ? Array.from(group.names).join(' / ')
+                        : '(名前なし)';
+                    item.innerHTML = `<span class="legend-swatch" style="background:${group.color}"></span><span>${displayName} (${group.count})</span>`;
+                    list.appendChild(item);
+                });
+        }
+
+        function closeModal() {
+            linkModal.style.display = 'none';
+            closeOverlayIfUnused();
+        }
+
+        function closeNodeEditor() {
+            nodeEditor.style.display = 'none';
+            editingNode = null;
+            closeOverlayIfUnused();
+        }
+
+        function closeTransEditor() {
+            transEditor.style.display = 'none';
+            editingEdge = null;
+            closeOverlayIfUnused();
+        }
+
+        function showModal(transitions) {
+            modalContent.innerHTML = '';
+            transitions.forEach(t => {
+                const btn = document.createElement('a');
+                btn.className = 'modal-btn' + (t.url ? '' : ' disabled');
+                btn.textContent = t.name + (t.url ? ' 🎥' : ' (動画なし)');
+                if (t.url) {
+                    btn.href = t.url;
+                    btn.target = '_blank';
+                }
+                modalContent.appendChild(btn);
+            });
+            openOverlay();
+            linkModal.style.display = 'block';
+        }
+
+        function openNodeEditor(node) {
+            editingNode = node;
+            document.getElementById('node-name-input').value = node.data('rawName') || '';
+            document.getElementById('node-url-input').value = node.data('url') || '';
+            document.getElementById('node-group-input').value = node.data('groupName') || '';
+            
+            const color = normalizeColor(node.data('color') || '#3498db');
+            document.getElementById('node-color-input').value = color;
+            updatePaletteSelection(document.getElementById('modal-color-palette'), color);
+
+            openOverlay();
+            nodeEditor.style.display = 'block';
+        }
+
+        function openTransEditor(edge) {
+            editingEdge = edge;
+            const transitions = edge.data('transitions') || [];
+            document.getElementById('trans-name-input').value = transitions[0]?.name || '';
+            document.getElementById('trans-url-input').value = transitions[0]?.url || '';
+            openOverlay();
+            transEditor.style.display = 'block';
+        }
+
+        function saveNodeEditor() {
+            if (!editingNode) return;
+            const oldData = editingNode.json();
+            const newName = document.getElementById('node-name-input').value.trim();
+            if (!newName) {
+                alert('技名を入力してください。');
+                return;
+            }
+            const newUrl = document.getElementById('node-url-input').value.trim();
+            const newColor = normalizeColor(document.getElementById('node-color-input').value);
+            const newGroup = document.getElementById('node-group-input').value.trim();
+            
+            editingNode.data({
+                rawName: newName,
+                url: newUrl,
+                color: newColor,
+                groupName: newGroup
+            });
+            
+            editingNode.style('background-color', newColor);
+            
+            updateNodeDisplay(editingNode);
+            pushUndo('edit', { ele: editingNode, oldData: oldData });
+            
+            document.getElementById('node-color').value = newColor;
+            updatePaletteSelection(document.getElementById('toolbar-color-palette'), newColor);
+            document.getElementById('group-name-input').value = newGroup;
+            
+            updateGroupLegend();
+            closeNodeEditor();
+        }
+
+        function saveTransEditor() {
+            if (!editingEdge) return;
+            const oldData = editingEdge.json();
+            const transitions = editingEdge.data('transitions') ? [...editingEdge.data('transitions')] : [];
+            if (transitions.length === 0) {
+                transitions.push({ name: '', url: '' });
+            }
+            transitions[0] = {
+                name: document.getElementById('trans-name-input').value.trim(),
+                url: document.getElementById('trans-url-input').value.trim()
+            };
+            if (!transitions[0].name) {
+                alert('遷移名を入力してください。');
+                return;
+            }
+            editingEdge.data({
+                transitions: transitions,
+                label: buildTransitionLabel(transitions),
+                hasTransUrl: transitions.some(t => t.url)
+            });
+            pushUndo('edit', { ele: editingEdge, oldData: oldData });
+            closeTransEditor();
+        }
+
+        // 閲覧専用モード固定
+
+        document.getElementById('node-save-btn').addEventListener('click', saveNodeEditor);
+        document.getElementById('trans-save-btn').addEventListener('click', saveTransEditor);
+
+        // 閲覧専用：ノード追加機能なし
+
+        let tapTimeout = null;
+        let lastTapTarget = null;
+        const DOUBLE_TAP_DELAY = 250;
+
+        cy.on('tap', function (evt) {
+            const target = evt.target;
+            if (lastTapTarget === target && tapTimeout !== null) {
+                clearTimeout(tapTimeout);
+                tapTimeout = null;
+                lastTapTarget = null;
+                if (target !== cy) handleEdit(target);
+                return;
+            }
+            lastTapTarget = target;
+            tapTimeout = setTimeout(() => {
+                tapTimeout = null;
+                lastTapTarget = null;
+                handleSingleTap(target);
+            }, DOUBLE_TAP_DELAY);
+        });
+
+        function handleEdit(target) {
+            // 閲覧専用：ダブルタップでの編集は無効
+        }
+
+        function handleSingleTap(target) {
+            if (target === cy) return;
+
+            // 閲覧モードのみ：リンクを開く
+            if (target.isNode()) {
+                const url = (target.data('url') || '').trim();
+                if (url !== '') {
+                    window.open(url, '_blank');
+                } else {
+                    alert('この技にはURLが設定されていません。');
+                }
+            } else if (target.isEdge() && target.data('edgeType') === 'trans') {
+                const transitions = target.data('transitions') || [];
+                if (transitions.length === 0) return;
+                if (transitions.length === 1 && transitions[0].url) {
+                    window.open(transitions[0].url, '_blank');
+                } else {
+                    showModal(transitions);
+                }
+            }
+        }
+
+        modalOverlay.addEventListener('click', () => {
+            closeModal();
+            closeNodeEditor();
+            closeTransEditor();
+        });
+
+        // 閲覧専用：undoボタンなし
+
+        document.getElementById('arrange-btn').addEventListener('click', () => {
+            cy.layout({ name: 'breadthfirst', directed: true, padding: 50, spacingFactor: 1.5 }).run();
+        });
+
+        // 閲覧専用：保存ボタンなし
+
+        document.getElementById('file-input').addEventListener('change', (evt) => {
+            const file = evt.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    cy.json(data);
+                    undoStack = [];
+                    // 埋め込みデータを自動読み込み
+        const EMBEDDED_DATA = {"elements":{"nodes":[{"data":{"id":"node_1782634484168","label":"アイドリング\n🔗","rawName":"アイドリング","url":"https://youtu.be/VG6s6zxdOIQ","color":"#e74c3c","groupName":"1CS"},"position":{"x":700.6640897390852,"y":128.11624578096135},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""},{"data":{"id":"node_1782634564763","label":"DI\n🔗","rawName":"DI","url":"https://youtu.be/h0gO8I-cXfE","color":"#2196f3","groupName":"2CS"},"position":{"x":470.93175642349655,"y":325.19399073010555},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""},{"data":{"id":"node_1782634751305","label":"左1up\n🔗","rawName":"左1up","url":"https://youtu.be/7pyO1FQS7V4","color":"#2196f3","groupName":"2CS"},"position":{"x":416,"y":476.5},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""},{"data":{"id":"node_1782634771605","label":"右1up\n🔗","rawName":"右1up","url":"https://youtu.be/k7kglfIV1vE","color":"#2196f3","groupName":"2CS"},"position":{"x":613.780474732746,"y":471.45498291844564},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""},{"data":{"id":"node_1782634784666","label":"ユニゾン\n🔗","rawName":"ユニゾン","url":"https://youtu.be/8UBzbiS8hSI","color":"#2196f3","groupName":"2CS"},"position":{"x":844.6392575772048,"y":383.0746781616587},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""},{"data":{"id":"node_1782634804307","label":"ウィンドミル","rawName":"ウィンドミル","url":"","color":"#e74c3c","groupName":"1CS"},"position":{"x":599.1165261549058,"y":264.8311244091249},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""},{"data":{"id":"node_1782634889927","label":"ボックス\n🔗","rawName":"ボックス","url":"https://youtu.be/e-pCT2Ce3Bo","color":"#f1c40f","groupName":"3CS"},"position":{"x":538,"y":626.5},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""},{"data":{"id":"node_1782634925744","label":"DIウィンドミル\n🔗","rawName":"DIウィンドミル","url":"https://youtu.be/7elYlAAPrnU","color":"#2196f3","groupName":"2CS"},"position":{"x":729.2998690906775,"y":464.20350104063},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""},{"data":{"id":"node_1782635302620","label":"ワンハンドアイドリング","rawName":"ワンハンドアイドリング","url":"","color":"#e74c3c","groupName":"1CS"},"position":{"x":763.3625283152536,"y":250.85117699273644},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""},{"data":{"id":"node_1782635330064","label":"チョップ","rawName":"チョップ","url":"","color":"#e74c3c","groupName":"1CS"},"position":{"x":956.4279482217094,"y":330.7054606189668},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""},{"data":{"id":"node_1782635666248","label":"(4,0)*\n🔗","rawName":"(4,0)*","url":"https://youtu.be/dP9RUUovFs4","color":"#2196f3","groupName":"2CS"},"position":{"x":239.63497120539367,"y":510.1972741749585},"group":"nodes","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":false,"classes":""}],"edges":[{"data":{"id":"edge_1782634957241","source":"node_1782634804307","target":"node_1782634925744","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782634959793","source":"node_1782634484168","target":"node_1782634564763","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782634963848","source":"node_1782634564763","target":"node_1782634751305","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782634966123","source":"node_1782634564763","target":"node_1782634771605","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782634967891","source":"node_1782634564763","target":"node_1782634925744","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782634982129","source":"node_1782634771605","target":"node_1782634889927","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782634984698","source":"node_1782634751305","target":"node_1782634889927","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782635317263","source":"node_1782634484168","target":"node_1782635302620","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782635319623","source":"node_1782635302620","target":"node_1782634784666","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782635335580","source":"node_1782635302620","target":"node_1782635330064","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782635345209","source":"node_1782634484168","target":"node_1782634804307","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782635365704","source":"node_1782634564763","target":"node_1782634784666","edgeType":"trans","label":"ウィンドミル遷移","transitions":[{"name":"ウィンドミル遷移","url":""}],"hasTransUrl":false},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782635402886","source":"node_1782634564763","target":"node_1782634564763","edgeType":"trans","label":"1. ハーフフリップ\n2. 2upピルエット","transitions":[{"name":"ハーフフリップ","url":"https://youtu.be/2u6BZsfBjyE"},{"name":"2upピルエット","url":""}],"hasTransUrl":true},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782635462032","source":"node_1782634484168","target":"node_1782634564763","edgeType":"trans","label":"キックアップ","transitions":[{"name":"キックアップ","url":""}],"hasTransUrl":false},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""},{"data":{"id":"edge_1782635719111","source":"node_1782635666248","target":"node_1782634889927","edgeType":"prereq"},"position":{"x":0,"y":0},"group":"edges","removed":false,"selected":false,"selectable":true,"locked":false,"grabbable":true,"pannable":true,"classes":""}]},"style":[{"selector":"node","style":{"label":"data(label)","background-color":"rgb(149,165,166)","color":"rgb(51,51,51)","text-valign":"bottom","text-margin-y":"5px","font-size":"14px","width":"40px","height":"40px","text-wrap":"wrap","z-index":"30","z-index-compare":"manual"}},{"selector":"edge[edgeType = \"prereq\"]","style":{"width":"3px","line-color":"rgb(149,165,166)","target-arrow-color":"rgb(149,165,166)","target-arrow-shape":"triangle","curve-style":"straight","z-index":"1","z-index-compare":"manual"}},{"selector":"edge[edgeType = \"trans\"]","style":{"width":"4px","line-color":"rgb(46,204,113)","target-arrow-color":"rgb(46,204,113)","target-arrow-shape":"vee","line-style":"dashed","curve-style":"unbundled-bezier","control-point-distances":"60px","control-point-weights":"0.5","label":"data(label)","text-wrap":"wrap","font-size":"12px","color":"rgb(39,174,96)","text-background-opacity":"1","text-background-color":"rgb(255,255,255)","text-background-padding":"4px","text-background-shape":"roundrectangle","text-border-opacity":"1","text-border-color":"rgb(46,204,113)","text-border-width":"1px","text-events":"yes","z-index":"10","z-index-compare":"manual"}},{"selector":".selected-source","style":{"border-width":"5px","border-color":"rgb(231,76,60)"}},{"selector":"node[url]","style":{"text-border-color":"rgb(231,76,60)","text-border-width":"2px"}},{"selector":"edge[hasTransUrl]","style":{"text-border-color":"rgb(231,76,60)","text-border-width":"2px"}}],"data":{},"zoomingEnabled":true,"userZoomingEnabled":true,"zoom":0.9713268629445725,"minZoom":1e-50,"maxZoom":1e+50,"panningEnabled":true,"userPanningEnabled":true,"pan":{"x":7.768304038016727,"y":-82.7955716402063},"boxSelectionEnabled":true,"renderer":{"name":"canvas"}};
+        cy.json(EMBEDDED_DATA);
+
+                normalizeGraphData();
+                    updateGroupLegend();
+                } catch (err) {
+                    alert('ファイルの読み込みに失敗しました。正しいJSONファイルを選択してください。');
+                }
+            };
+            reader.readAsText(file);
+            evt.target.value = '';
+        });
+
+        normalizeGraphData();
+        updateGroupLegend();
+    </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+
+</html>
